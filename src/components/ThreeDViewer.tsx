@@ -1,10 +1,11 @@
 import { useRef, useEffect } from 'react';
 import * as THREE from 'three';
+// @ts-expect-error This is a custom file that doesn't exist in the @types/three package
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Client } from 'paho-mqtt';
 
 function updateSphereInstances(instancedMesh: THREE.InstancedMesh<THREE.SphereGeometry, THREE.MeshPhongMaterial, THREE.InstancedMeshEventMap>,
-    newPointsData: number[][], sphereRadius: number, scene) {
+    newPointsData: number[][], sphereRadius: number, scene: THREE.Scene) {
     // If the number of points changes, dispose of the old mesh and create a new one.
     if (instancedMesh.count !== newPointsData.length) {
         console.log("Removing old instances");
@@ -31,7 +32,7 @@ function updateSphereInstances(instancedMesh: THREE.InstancedMesh<THREE.SphereGe
     return instancedMesh;
 }
 
-function createSphereInstances(newPointsData, sphereRadius, scene) {
+function createSphereInstances(newPointsData: number[][], sphereRadius: number, scene: THREE.Scene) {
     // Create the base geometry for a sphere.
     const sphereGeometry = new THREE.SphereGeometry(sphereRadius, 16, 16);
 
@@ -67,11 +68,14 @@ function createSphereInstances(newPointsData, sphereRadius, scene) {
 
 
 const ThreeDViewer = () => {
-    const mountRef = useRef(null);
+    const mountRef = useRef<HTMLDivElement>(null);
 
 
 
     useEffect(() => {
+        if (!mountRef.current) {
+            return;
+        }
         // Set up the scene, camera, and renderer
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
