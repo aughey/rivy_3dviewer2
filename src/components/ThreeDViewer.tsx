@@ -1,8 +1,7 @@
 import { useRef, useEffect } from 'react';
 import * as THREE from 'three';
-// @ts-expect-error This is a custom file that doesn't exist in the @types/three package
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { Client } from 'paho-mqtt';
+import mqtt from 'mqtt';
 
 function updateSphereInstances(instancedMesh: THREE.InstancedMesh<THREE.SphereGeometry, THREE.MeshPhongMaterial, THREE.InstancedMeshEventMap>,
     newPointsData: number[][], sphereRadius: number, scene: THREE.Scene) {
@@ -105,8 +104,18 @@ const ThreeDViewer = () => {
         camera.add(directionalLight);
         scene.add(camera)
 
+        let new_bytes: [ArrayBufferLike, number, number] | null = null;
+
         // Animation loop
         const animate = () => {
+            if (new_bytes !== null) {
+                const pointsData = convertToFloat64Triples(new_bytes);
+                // console.log(pointsData);
+                //const pointsData = JSON.parse(message.payloadString);
+                sphereInstances = updateSphereInstances(sphereInstances, pointsData, 0.1, scene);
+                new_bytes = null;
+                console.log(Date.now());
+            }
 
             controls.update();
             renderer.render(scene, camera);
@@ -114,6 +123,7 @@ const ThreeDViewer = () => {
 
         };
         animate();
+
 
         // Handle window resizing
         const onWindowResize = () => {
@@ -126,34 +136,26 @@ const ThreeDViewer = () => {
         let sphereInstances = createSphereInstances([], 0.1, scene);
 
         // MQTT connection setup
-        const client = new Client('localhost', 8080, '3dclientId' + new Date().getTime());
-        client.connect({
-            onSuccess: () => {
-                console.log("Connected to MQTT broker");
-                client.subscribe('points');
-            },
+        const client = mqtt.connect("ws://localhost:8080");
+        client.on('connect', function () {
+            console.log("Connected to MQTT broker");
+
+            client.subscribe("points");
+            client.on("message", function (topic, message) {
+                if (topic !== "points") {
+                    return;
+                }
+                new_bytes = [message.buffer, message.byteOffset, message.byteLength]
+            });
         });
 
-        client.onMessageArrived = (message) => {
-            if (message.destinationName === 'points') {
 
-                const bytes = message.payloadBytes;
-
-                const pointsData = convertToFloat64Triples(bytes as Paho.MQTT.TypedArray);
-                // console.log(pointsData);
-                //const pointsData = JSON.parse(message.payloadString);
-                sphereInstances = updateSphereInstances(sphereInstances, pointsData, 0.1, scene);
-
-                //updatePoints(scene, pointsData);
-            }
-        };
-
-        function convertToFloat64Triples(typedArray: Paho.MQTT.TypedArray): number[][] {
+        function convertToFloat64Triples(typedArray: [ArrayBufferLike, number, number]): number[][] {
             // Create an empty array to store the triples
-            const dataView = new DataView(typedArray.buffer, typedArray.byteOffset, typedArray.byteLength);
+            const dataView = new DataView(typedArray[0], typedArray[1], typedArray[2]);
             const triples = [];
 
-            for (let i = 0; i < typedArray.byteLength; i += 8 * 3) {
+            for (let i = 0; i < typedArray[2]; i += 8 * 3) {
                 // Read a 64-bit float (double) from the current position
                 // little-endian
                 const x = dataView.getFloat64(i + 0, true);
@@ -180,7 +182,7 @@ const ThreeDViewer = () => {
             if (currentMount) {
                 currentMount.removeChild(renderer.domElement);
             }
-            client.disconnect(); // Disconnect from MQTT broker on cleanup
+            client.end();
         };
     }, [mountRef]);
 
